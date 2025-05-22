@@ -16,7 +16,7 @@ build:
     - cd imagequant-sys
     - if: win
       then:
-        - cargo cinstall --prefix="%LIBRARY_PREFIX%" --library-type=cdylib --release
+        - cargo cinstall --prefix="%LIBRARY_PREFIX%" --libdir="%LIBRARY_PREFIX%/lib" --library-type=cdylib --release
       else:
         - cargo cinstall --prefix="$PREFIX" --libdir="$PREFIX/lib" --library-type=cdylib --release --target=$CARGO_BUILD_TARGET
     - cargo-bundle-licenses --format yaml --output THIRDPARTY.yml
