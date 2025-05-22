@@ -34,19 +34,11 @@ requirements:
 tests:
   - package_contents:
       lib:
-        - if: unix
-          then:
-            - libimagequant
-          else:
-            - imagequant
+        - imagequant
       include:
         - libimagequant.h
       files:
-        - if: unix
-          then:
-            - lib/pkgconfig/imagequant.pc
-          else:
-            - Library/lib/pkgconfig/imagequant.pc
+        - "**/lib/pkgconfig/imagequant.pc"
 
 about:
   summary: Palette quantization library that powers pngquant and other PNG optimizers
