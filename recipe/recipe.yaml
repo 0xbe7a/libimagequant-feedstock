@@ -34,7 +34,9 @@ requirements:
 tests:
   - package_contents:
       lib:
-        - imagequant
+        - if: not win
+          then:
+            - imagequant
       include:
         - libimagequant.h
       files:
