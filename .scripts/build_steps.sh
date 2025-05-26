@@ -24,25 +24,50 @@ export CONFIG_FILE="${CI_SUPPORT}/${CONFIG}.yaml"
 cat >~/.condarc <<CONDARC
 
 conda-build:
- root-dir: ${FEEDSTOCK_ROOT}/build_artifacts
+  root-dir: ${FEEDSTOCK_ROOT}/build_artifacts
+pkgs_dirs:
+  - ${FEEDSTOCK_ROOT}/build_artifacts/pkg_cache
+  - /opt/conda/pkgs
+solver: libmamba
 
 CONDARC
-
-
-mamba install --update-specs --yes --quiet "conda-forge-ci-setup=3" conda-build pip boa -c conda-forge
-mamba update --update-specs --yes --quiet "conda-forge-ci-setup=3" conda-build pip boa -c conda-forge
+curl -fsSL https://pixi.sh/install.sh | bash
+export PATH="~/.pixi/bin:$PATH"
+pushd "${FEEDSTOCK_ROOT}"
+arch=$(uname -m)
+if [[ "$arch" == "x86_64" ]]; then
+  arch="64"
+fi
+sed -i.bak -e "s/platforms = .*/platforms = [\"linux-${arch}\"]/" -e "s/# __PLATFORM_SPECIFIC_ENV__ =/docker-build-linux-$arch =/" pixi.toml
+echo "Creating environment"
+PIXI_CACHE_DIR=/opt/conda pixi install --environment docker-build-linux-$arch
+pixi list
+echo "Activating environment"
+eval "$(pixi shell-hook --environment docker-build-linux-$arch)"
+mv pixi.toml.bak pixi.toml
+popd
+export CONDA_LIBMAMBA_SOLVER_NO_CHANNELS_FROM_INSTALLED=1
 
 # set up the condarc
 setup_conda_rc "${FEEDSTOCK_ROOT}" "${RECIPE_ROOT}" "${CONFIG_FILE}"
 
 source run_conda_forge_build_setup
 
+
+
 # make the build number clobber
 make_build_number "${FEEDSTOCK_ROOT}" "${RECIPE_ROOT}" "${CONFIG_FILE}"
 
+if [[ "${HOST_PLATFORM}" != "${BUILD_PLATFORM}" ]] && [[ "${HOST_PLATFORM}" != linux-* ]] && [[ "${BUILD_WITH_CONDA_DEBUG:-0}" != 1 ]]; then
+    EXTRA_CB_OPTIONS="${EXTRA_CB_OPTIONS:-} --no-test"
+fi
 
 
 ( endgroup "Configuring conda" ) 2> /dev/null
+
+if [[ -f "${FEEDSTOCK_ROOT}/LICENSE.txt" ]]; then
+  cp "${FEEDSTOCK_ROOT}/LICENSE.txt" "${RECIPE_ROOT}/recipe-scripts-license.txt"
+fi
 
 if [[ "${BUILD_WITH_CONDA_DEBUG:-0}" == 1 ]]; then
     if [[ "x${BUILD_OUTPUT_ID:-}" != "x" ]]; then
@@ -55,9 +80,16 @@ if [[ "${BUILD_WITH_CONDA_DEBUG:-0}" == 1 ]]; then
     # Drop into an interactive shell
     /bin/bash
 else
-    conda mambabuild "${RECIPE_ROOT}" -m "${CI_SUPPORT}/${CONFIG}.yaml" \
+    conda-build "${RECIPE_ROOT}" -m "${CI_SUPPORT}/${CONFIG}.yaml" \
         --suppress-variables ${EXTRA_CB_OPTIONS:-} \
-        --clobber-file "${CI_SUPPORT}/clobber_${CONFIG}.yaml"
+        --clobber-file "${CI_SUPPORT}/clobber_${CONFIG}.yaml" \
+        --extra-meta flow_run_id="${flow_run_id:-}" remote_url="${remote_url:-}" sha="${sha:-}"
+    ( startgroup "Inspecting artifacts" ) 2> /dev/null
+
+    # inspect_artifacts was only added in conda-forge-ci-setup 4.9.4
+    command -v inspect_artifacts >/dev/null 2>&1 && inspect_artifacts --recipe-dir "${RECIPE_ROOT}" -m "${CONFIG_FILE}" || echo "inspect_artifacts needs conda-forge-ci-setup >=4.9.4"
+
+    ( endgroup "Inspecting artifacts" ) 2> /dev/null
     ( startgroup "Validating outputs" ) 2> /dev/null
 
     validate_recipe_outputs "${FEEDSTOCK_NAME}"
